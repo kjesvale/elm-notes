@@ -1,11 +1,12 @@
 module Main exposing (main)
 
 import Browser
+import Browser.Dom as Dom
 import Html exposing (Html, div, h1, text)
 import Html.Attributes exposing (class, contenteditable, id)
-import Html.Events exposing (custom, on)
+import Html.Events exposing (preventDefaultOn)
 import Json.Decode as Json
-import Keyboard.Event exposing (KeyboardEvent)
+import Task
 
 
 
@@ -52,7 +53,6 @@ type Msg
     = CreateEmptyBlock
     | Edit Block
     | Delete Block
-    | OnEnter
     | Noop
 
 
@@ -79,34 +79,44 @@ editBlock content block =
         content
 
 
-newBlock : Content -> Block
-newBlock content =
-    { id =
-        case List.maximum (List.map (\block -> block.id) content) of
-            Just max ->
-                max + 1
+getNextId : Content -> Int
+getNextId content =
+    case List.maximum (List.map (\block -> block.id) content) of
+        Just max ->
+            max + 1
 
-            Nothing ->
-                0
+        Nothing ->
+            0
+
+
+generateEmptyBlock : Int -> Block
+generateEmptyBlock id =
+    { id = id
     , text = ""
     , variant = Text
     }
+
+
+focusBlock : Block -> Cmd Msg
+focusBlock block =
+    Task.attempt (always Noop) (Dom.focus ("block-" ++ String.fromInt block.id))
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         CreateEmptyBlock ->
-            ( { model | content = addBlock model.content (newBlock model.content) }, Cmd.none )
+            let
+                emptyBlock =
+                    generateEmptyBlock (getNextId model.content)
+            in
+            ( { model | content = addBlock model.content emptyBlock }, focusBlock emptyBlock )
 
         Delete block ->
             ( { model | content = deleteBlock model.content block }, Cmd.none )
 
         Edit block ->
             ( { model | content = editBlock model.content block }, Cmd.none )
-
-        OnEnter ->
-            update CreateEmptyBlock model
 
         Noop ->
             ( model, Cmd.none )
@@ -134,7 +144,8 @@ keyDecoder =
 renderBlock : Block -> Html Msg
 renderBlock block =
     div
-        [ class "block"
+        [ id ("block-" ++ String.fromInt block.id)
+        , class "block"
         , contenteditable True
         , Html.Events.preventDefaultOn "keydown" keyDecoder
         ]
