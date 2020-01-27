@@ -6,6 +6,7 @@ import Html exposing (Html, div, h1, text)
 import Html.Attributes exposing (class, contenteditable, id)
 import Html.Events exposing (preventDefaultOn)
 import Json.Decode as Json
+import List.Extra exposing (elemIndex)
 import Task
 
 
@@ -50,7 +51,7 @@ init =
 
 
 type Msg
-    = CreateEmptyBlock
+    = InsertBlockAfter Block
     | Edit Block
     | Delete Block
     | Noop
@@ -59,6 +60,27 @@ type Msg
 addBlock : Content -> Block -> Content
 addBlock content block =
     List.concat [ content, [ block ] ]
+
+
+insertBlockAfter : Block -> Block -> Content -> Content
+insertBlockAfter block prevBlock content =
+    let
+        prevBlockIndex =
+            elemIndex prevBlock content
+    in
+    case prevBlockIndex of
+        Just index ->
+            let
+                firstPart =
+                    List.take index content
+
+                secondPart =
+                    List.drop index content
+            in
+            List.concat [ firstPart, [ block ], secondPart ]
+
+        Nothing ->
+            content
 
 
 deleteBlock : Content -> Block -> Content
@@ -105,12 +127,12 @@ focusBlock block =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        CreateEmptyBlock ->
+        InsertBlockAfter previousBlock ->
             let
                 emptyBlock =
                     generateEmptyBlock (getNextId model.content)
             in
-            ( { model | content = addBlock model.content emptyBlock }, focusBlock emptyBlock )
+            ( { model | content = insertBlockAfter emptyBlock previousBlock model.content }, focusBlock emptyBlock )
 
         Delete block ->
             ( { model | content = deleteBlock model.content block }, Cmd.none )
@@ -126,13 +148,13 @@ update msg model =
 ---- VIEW ----
 
 
-keyDecoder : Json.Decoder ( Msg, Bool )
-keyDecoder =
+keyDecoder : Block -> Json.Decoder ( Msg, Bool )
+keyDecoder block =
     Json.field "key" Json.string
         |> Json.map
             (\key ->
                 ( if key == "Enter" then
-                    CreateEmptyBlock
+                    InsertBlockAfter block
 
                   else
                     Noop
@@ -147,7 +169,7 @@ renderBlock block =
         [ id ("block-" ++ String.fromInt block.id)
         , class "block"
         , contenteditable True
-        , Html.Events.preventDefaultOn "keydown" keyDecoder
+        , Html.Events.preventDefaultOn "keydown" (keyDecoder block)
         ]
         [ text block.text
         ]
